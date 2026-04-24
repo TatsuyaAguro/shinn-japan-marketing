@@ -55,7 +55,7 @@ export default function TogDetailPage() {
     await patchTogCase(id, {
       name: form.name, organization: form.organization, prefecture: form.prefecture,
       category: form.category, description: form.description,
-      budget: form.budget, deadline: form.deadline ?? null,
+      budget: form.budget ?? undefined, deadline: form.deadline ?? null,
       url: form.url, gdrive_link: form.gdriveLink,
       memo: form.memo, assigned_to: form.assignedTo,
     })
@@ -245,7 +245,7 @@ export default function TogDetailPage() {
                     className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                   />
                 ) : (
-                  <p className="text-sm text-slate-700 font-semibold">{formatBudget(togCase.budget)}</p>
+                  <p className="text-sm text-slate-700 font-semibold">{formatBudget(togCase.budget ?? 0)}</p>
                 )}
               </div>
               <div>

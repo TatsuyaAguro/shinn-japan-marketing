@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.tog_cases (
   winner                  TEXT        DEFAULT '',
   url                     TEXT        DEFAULT '',
   status                  TEXT        NOT NULL DEFAULT 'new'
-    CHECK (status IN ('new','considering','preparing','applied','waiting','accepted','rejected','passed','archive')),
+    CHECK (status IN ('new','considering','preparing','applied','waiting','accepted','rejected','passed','dismissed','archive')),
   priority                TEXT        DEFAULT '',
   ai_score                INTEGER     DEFAULT 0 CHECK (ai_score BETWEEN 0 AND 5),
   ai_reason               TEXT        DEFAULT '',

@@ -74,7 +74,7 @@ export default function ArchiveTab({ cases, onRefresh }: Props) {
     })
     .sort((a, b) => {
       let v = 0
-      if (sortKey === 'budget') v = a.budget - b.budget
+      if (sortKey === 'budget') v = (a.budget ?? 0) - (b.budget ?? 0)
       else v = (a[sortKey] ?? '').toString().localeCompare((b[sortKey] ?? '').toString())
       return sortDesc ? -v : v
     })
@@ -367,7 +367,7 @@ export default function ArchiveTab({ cases, onRefresh }: Props) {
                     </td>
                     <td className="px-4 py-3 text-slate-600 text-xs hidden md:table-cell">{c.organization || '─'}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">{c.prefecture || '─'}</td>
-                    <td className="px-4 py-3 text-slate-600 text-xs font-medium hidden lg:table-cell">{formatBudget(c.budget)}</td>
+                    <td className="px-4 py-3 text-slate-600 text-xs font-medium hidden lg:table-cell">{formatBudget(c.budget ?? 0)}</td>
                     <td className="px-4 py-3">
                       {c.winner ? (
                         <span className="text-xs px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full font-medium">{c.winner}</span>

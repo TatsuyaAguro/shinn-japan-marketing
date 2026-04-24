@@ -10,8 +10,9 @@ export type TogStatus =
   | 'waiting'     // 結果待ち
   | 'accepted'    // 採択
   | 'rejected'    // 不採択
-  | 'passed'      // 見送り
-  | 'archive'     // 過去案件（CSV等からインポート）
+  | 'passed'      // 見送り（旧）
+  | 'dismissed'   // 見送り：弊社に関係ない（どのタブにも表示しない）
+  | 'archive'     // 過去案件（CSV等からインポート / 準備不足で見送り）
 
 export type TogScore = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -22,11 +23,14 @@ export interface TogCase {
   prefecture: string
   category: string
   description: string
-  budget: number
+  budget: number | null
+  budgetNote: string | null
   deadline: string | null       // ISO date string or null
+  deadlineNote: string | null
   recruitmentDate: string
   winner: string
   url: string
+  urlSourceType: string | null
   status: TogStatus
   priority: string
   aiScore: TogScore
@@ -75,6 +79,7 @@ export const STATUS_META: Record<TogStatus, { label: string; color: string; kanb
   accepted:    { label: '採択',       color: 'bg-emerald-100 text-emerald-700', kanban: true },
   rejected:    { label: '不採択',     color: 'bg-red-100 text-red-700' },
   passed:      { label: '見送り',     color: 'bg-slate-100 text-slate-500' },
+  dismissed:   { label: '対象外',     color: 'bg-slate-100 text-slate-400' },
   archive:     { label: '過去案件',   color: 'bg-slate-100 text-slate-600' },
 }
 

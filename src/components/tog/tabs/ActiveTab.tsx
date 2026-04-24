@@ -93,7 +93,7 @@ function ConfirmAcceptDialog({
               <div><span className="text-slate-400">クライアント名</span><br />{togCase.organization || '─'}</div>
               <div><span className="text-slate-400">地域</span><br />{togCase.prefecture || '─'}</div>
               <div><span className="text-slate-400">カテゴリ</span><br />自治体</div>
-              <div><span className="text-slate-400">予算上限</span><br />{togCase.budget > 0 ? `${formatBudget(togCase.budget)}円` : '未定'}</div>
+              <div><span className="text-slate-400">予算上限</span><br />{(togCase.budget ?? 0) > 0 ? `${formatBudget(togCase.budget ?? 0)}円` : '未定'}</div>
             </div>
           </div>
         </div>
@@ -460,13 +460,21 @@ export default function ActiveTab({ cases, onRefresh }: Props) {
                           <p className="text-xs text-slate-500 truncate">{c.organization}</p>
                         )}
                         <div className="flex items-center gap-2 text-xs text-slate-400">
-                          {c.budget > 0 && <span>{formatBudget(c.budget)}円</span>}
+                          {(c.budget ?? 0) > 0 && <span>{formatBudget(c.budget ?? 0)}円</span>}
                           {c.deadline && (
                             <span className={new Date(c.deadline) < new Date(Date.now() + 7 * 86400000) ? 'text-red-500 font-semibold' : ''}>
                               {c.deadline}
                             </span>
                           )}
                         </div>
+                        {c.assignedTo && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <svg className="w-3 h-3 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            <span className="text-xs text-blue-600 font-semibold">{c.assignedTo}</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Accepted: client link */}

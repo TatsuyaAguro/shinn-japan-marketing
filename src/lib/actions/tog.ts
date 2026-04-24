@@ -13,11 +13,14 @@ function rowToCase(r: Record<string, unknown>): TogCase {
     prefecture:              (r.prefecture as string) ?? '',
     category:                (r.category as string) ?? '',
     description:             (r.description as string) ?? '',
-    budget:                  Number(r.budget ?? 0),
+    budget:                  r.budget !== null && r.budget !== undefined ? Number(r.budget) : null,
+    budgetNote:              (r.budget_note as string) ?? null,
     deadline:                (r.deadline as string) ?? null,
+    deadlineNote:            (r.deadline_note as string) ?? null,
     recruitmentDate:         (r.recruitment_date as string) ?? '',
     winner:                  (r.winner as string) ?? '',
     url:                     (r.url as string) ?? '',
+    urlSourceType:           (r.url_source_type as string) ?? null,
     status:                  (r.status as TogStatus) ?? 'new',
     priority:                (r.priority as string) ?? '',
     aiScore:                 (Number(r.ai_score) ?? 0) as TogCase['aiScore'],
@@ -93,10 +96,13 @@ export async function upsertTogCase(input: Partial<TogCase> & { id?: string }): 
   if (input.category !== undefined)    row.category = input.category
   if (input.description !== undefined) row.description = input.description
   if (input.budget !== undefined)      row.budget = input.budget
+  if (input.budgetNote !== undefined)  row.budget_note = input.budgetNote
   if (input.deadline !== undefined)    row.deadline = input.deadline
+  if (input.deadlineNote !== undefined) row.deadline_note = input.deadlineNote
   if (input.recruitmentDate !== undefined) row.recruitment_date = input.recruitmentDate
   if (input.winner !== undefined)      row.winner = input.winner
   if (input.url !== undefined)         row.url = input.url
+  if (input.urlSourceType !== undefined) row.url_source_type = input.urlSourceType
   if (input.status !== undefined)      row.status = input.status
   if (input.priority !== undefined)    row.priority = input.priority
   if (input.aiScore !== undefined)     row.ai_score = input.aiScore
@@ -255,7 +261,7 @@ export async function createClientFromTogCase(togCaseId: string): Promise<string
       category:         '自治体',
       target_market:    '欧米豪',
       tourist_resources: '',
-      budget:           togCase.budget > 0 ? `${Math.round(togCase.budget / 10000)}万円` : '未定',
+      budget:           (togCase.budget ?? 0) > 0 ? `${Math.round((togCase.budget ?? 0) / 10000)}万円` : '未定',
       manager:          togCase.assignedTo || '',
       status:           'active',
       description:      togCase.description,
@@ -321,8 +327,8 @@ export async function fetchTogStats(): Promise<{
   const accepted      = cases.filter(c => c.status === 'accepted')
   const totalApplied  = applied.length
   const totalAccepted = accepted.length
-  const totalBudgetApplied  = applied.reduce((s, c) => s + c.budget, 0)
-  const totalBudgetAccepted = accepted.reduce((s, c) => s + c.budget, 0)
+  const totalBudgetApplied  = applied.reduce((s, c) => s + (c.budget ?? 0), 0)
+  const totalBudgetAccepted = accepted.reduce((s, c) => s + (c.budget ?? 0), 0)
   const acceptanceRate = totalApplied > 0 ? Math.round((totalAccepted / totalApplied) * 100) : 0
 
   // 都道府県別

@@ -68,14 +68,56 @@ SHINN JAPANは欧米豪の高付加価値旅行者向けの観光インバウン
 - 教育旅行（修学旅行誘致等）
 - 移住促進事業
 
+━━━ 必須項目の抽出ルール ━━━
+
+各案件について、以下の情報を必ず公式公募ページを実際に開いて抽出すること。検索結果のスニペットだけで判断しないこと。
+
+【提案上限額】
+- 公募要領または公示文に記載されている「提案上限額」「予算上限」「事業費上限」「委託料上限」などを探す
+- 「◯◯万円」「◯◯円」「◯◯千円」の形式を正規化して数値で保存（例：「1,200万円」→ 12000000）
+- 税込/税抜の区別があれば budget_note フィールドに記録
+- どうしても見つからない場合のみ null にする。その場合 budget_note に「公募要領に記載なし」と明記
+
+【締切日】
+- 「提案書提出期限」「応募締切」「受付期限」などを探す
+- YYYY-MM-DD 形式に正規化（例：「令和8年4月27日」→「2026-04-27」）
+- 時刻情報があれば deadline_note に記録（例：「17:00必着」）
+- 複数の締切がある場合（質問受付期限、提案書提出期限等）は、提案書提出期限を採用
+
+【公募ページURL】
+- URLは必ず「公募情報そのものが掲載されているページ」にすること
+- ニュース記事、プレスリリース、ブログ、まとめサイトのURLは絶対に使わない
+- 候補URLが複数ある場合の優先順位：
+  1. 自治体公式サイトの当該公募の詳細ページ → url_source_type: "municipality_official"
+  2. DMO・観光連盟公式サイトの当該公募ページ → url_source_type: "dmo_official"
+  3. トラベルボイス入札情報（travelvoice.jp/tenders/XXXX）の個別案件ページ → url_source_type: "travelvoice"
+  4. 観光庁公募情報（mlit.go.jp/kankocho）→ url_source_type: "kankocho"
+  5. NJSSの個別案件ページ → url_source_type: "njss"
+- URLが上記5種類に該当しない場合は、その案件を出力しないこと
+
+━━━ 抽出の姿勢 ━━━
+
+- 「わからない」で済ませない。必ず公式ページにアクセスして確認する
+- ウェブ検索の結果スニペットだけで判断せず、必ずページ本文を読む
+- PDFの公募要領がある場合は自動ダウンロード＆テキスト抽出を使う
+- それでも見つからない情報だけを null にする
+
 ━━━ 出力形式 ━━━
 各案件に対してJSON形式で出力：
 {
   "score": 3-5の整数（2以下は出力しない）,
   "reason": "判定理由を2-3文で。なぜこのスコアか、どの提供価値にマッチするか",
   "matching_services": ["販路形成", "コンテンツ造成"],
-  "action_recommendation": "即応募" | "要検討" | "仕様書確認"
+  "action_recommendation": "即応募" | "要検討" | "仕様書確認",
+  "budget": 数値または null（提案上限額を円単位で）,
+  "budget_note": "税込/税抜・記載なしの注記など（不要なら空文字）",
+  "deadline": "YYYY-MM-DD形式または null",
+  "deadline_note": "時刻や補足（不要なら空文字）",
+  "url": "公募ページの公式URL",
+  "url_source_type": "municipality_official" | "dmo_official" | "travelvoice" | "njss" | "kankocho"
 }
+
+url_source_type が上記5つ以外になる場合、その案件は出力しないこと。
 
 ━━━ 判定時の注意事項 ━━━
 1. 案件名だけで判断せず、業務内容の詳細も読んで総合判断
@@ -121,9 +163,12 @@ ${SCREENING_SYSTEM_PROMPT}
     "prefecture": "都道府県",
     "category": "案件種類",
     "description": "業務概要",
-    "budget": 提案上限額（数値、万円単位ではなく円単位）,
-    "deadline": "締切日 YYYY-MM-DD形式",
+    "budget": 提案上限額（数値、万円単位ではなく円単位）または null,
+    "budget_note": "税込/税抜・記載なしの注記（不要なら空文字）",
+    "deadline": "締切日 YYYY-MM-DD形式または null",
+    "deadline_note": "時刻や補足（不要なら空文字）",
     "url": "公募ページURL",
+    "url_source_type": "municipality_official|dmo_official|travelvoice|njss|kankocho",
     "ai_score": 3〜5,
     "ai_reason": "判定理由",
     "ai_matching_services": ["サービス1", "サービス2"],
