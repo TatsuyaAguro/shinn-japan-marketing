@@ -3,16 +3,18 @@
 // ============================================================
 
 export type TogStatus =
-  | 'new'         // 新着（AIスクリーニング済み）
-  | 'considering' // 検討中
-  | 'preparing'   // 応募準備中
-  | 'applied'     // 応募済み
-  | 'waiting'     // 結果待ち
-  | 'accepted'    // 採択
-  | 'rejected'    // 不採択
-  | 'passed'      // 見送り（旧）
-  | 'dismissed'   // 見送り：弊社に関係ない（どのタブにも表示しない）
-  | 'archive'     // 過去案件（CSV等からインポート / 準備不足で見送り）
+  | 'new'              // 新着（AIスクリーニング済み）
+  | 'considering'      // 検討中
+  | 'preparing'        // 応募準備中
+  | 'applied'          // 応募済み
+  | 'waiting'          // 結果待ち
+  | 'accepted'         // 採択 → 自社応募履歴
+  | 'rejected'         // 不採択 → 自社応募履歴
+  | 'passed'           // 見送り（旧・後方互換）→ 自社応募履歴
+  | 'dismissed'        // 後方互換（→ passed_unrelated に移行済み）
+  | 'passed_unrelated' // 見送り：弊社に関係ない → 自社応募履歴
+  | 'passed_prep'      // 見送り：準備不足・関係者不足 → 自社応募履歴
+  | 'archive'          // 業界データベース（CSV等からインポート）
 
 export type TogScore = 0 | 1 | 2 | 3 | 4 | 5
 
@@ -45,6 +47,7 @@ export interface TogCase {
   linkedClientId: string | null
   statusHistory: { status: TogStatus; date: string; note?: string }[]
   uploadedFiles: { id: string; name: string; url: string }[]
+  resultRecordedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -78,9 +81,11 @@ export const STATUS_META: Record<TogStatus, { label: string; color: string; kanb
   waiting:     { label: '結果待ち',   color: 'bg-orange-100 text-orange-700' },
   accepted:    { label: '採択',       color: 'bg-emerald-100 text-emerald-700', kanban: true },
   rejected:    { label: '不採択',     color: 'bg-red-100 text-red-700' },
-  passed:      { label: '見送り',     color: 'bg-slate-100 text-slate-500' },
-  dismissed:   { label: '対象外',     color: 'bg-slate-100 text-slate-400' },
-  archive:     { label: '過去案件',   color: 'bg-slate-100 text-slate-600' },
+  passed:           { label: '見送り',           color: 'bg-slate-100 text-slate-500' },
+  dismissed:        { label: '対象外(旧)',        color: 'bg-slate-100 text-slate-400' },
+  passed_unrelated: { label: '見送り(無関係)',    color: 'bg-slate-100 text-slate-500' },
+  passed_prep:      { label: '見送り(準備不足)',  color: 'bg-slate-100 text-slate-500' },
+  archive:          { label: '業界DB',            color: 'bg-slate-100 text-slate-600' },
 }
 
 export const KANBAN_COLUMNS: { status: TogStatus; label: string; color: string }[] = [

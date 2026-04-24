@@ -21,22 +21,24 @@ export default function TogPage() {
   const [tab, setTab] = useState<Tab>('new')
   const [newCases, setNewCases] = useState<TogCase[]>([])
   const [activeCases, setActiveCases] = useState<TogCase[]>([])
-  const [archiveCases, setArchiveCases] = useState<TogCase[]>([])
+  const [archiveCases, setArchiveCases] = useState<TogCase[]>([])   // status='archive' 業界DB
+  const [historyCases, setHistoryCases] = useState<TogCase[]>([])  // 採択/不採択/見送り
   const [predictions, setPredictions] = useState<TogPrediction[]>([])
   const [lastResearched, setLastResearched] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const [newC, activeC, archiveC, preds] = await Promise.all([
+    const [newC, activeC, archiveC, historyC, preds] = await Promise.all([
       fetchTogCases({ status: ['new', 'passed'], minScore: 3 }),
       fetchTogCases({ status: ['considering', 'preparing', 'applied', 'waiting', 'accepted'] }),
-      fetchTogCases({ status: ['archive', 'rejected'] }),
+      fetchTogCases({ status: 'archive' }),
+      fetchTogCases({ status: ['accepted', 'rejected', 'passed_unrelated', 'passed_prep', 'passed', 'dismissed'] }),
       fetchTogPredictions(),
     ])
-    // 新着のみ表示（見送りは除外）
     setNewCases(newC.filter(c => c.status === 'new'))
     setActiveCases(activeC)
     setArchiveCases(archiveC)
+    setHistoryCases(historyC)
     setPredictions(preds)
 
     // 最終リサーチ時刻 = 新着案件の最新 createdAt
@@ -112,7 +114,8 @@ export default function TogPage() {
         )}
         {tab === 'archive' && (
           <ArchiveTab
-            cases={archiveCases}
+            archiveCases={archiveCases}
+            historyCases={historyCases}
             onRefresh={load}
           />
         )}

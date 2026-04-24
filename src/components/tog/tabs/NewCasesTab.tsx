@@ -204,10 +204,10 @@ function DismissModal({
 }: {
   togCase: TogCase
   submitting: boolean
-  onConfirm: (status: 'dismissed' | 'archive') => void
+  onConfirm: (status: 'passed_unrelated' | 'passed_prep') => void
   onCancel: () => void
 }) {
-  const [reason, setReason] = useState<'dismissed' | 'archive' | null>(null)
+  const [reason, setReason] = useState<'passed_unrelated' | 'passed_prep' | null>(null)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
@@ -256,39 +256,39 @@ function DismissModal({
 
             <label
               className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
-                reason === 'dismissed'
+                reason === 'passed_unrelated'
                   ? 'border-slate-400 bg-slate-50'
                   : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
               }`}
-              onClick={() => setReason('dismissed')}
+              onClick={() => setReason('passed_unrelated')}
             >
               <div className={`mt-0.5 shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                reason === 'dismissed' ? 'border-slate-500' : 'border-slate-300'
+                reason === 'passed_unrelated' ? 'border-slate-500' : 'border-slate-300'
               }`}>
-                {reason === 'dismissed' && <div className="w-2 h-2 rounded-full bg-slate-500" />}
+                {reason === 'passed_unrelated' && <div className="w-2 h-2 rounded-full bg-slate-500" />}
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">弊社に関係ない案件だった</p>
-                <p className="text-xs text-slate-500 mt-0.5">過去案件には登録しない</p>
+                <p className="text-xs text-slate-500 mt-0.5">自社応募履歴に記録する</p>
               </div>
             </label>
 
             <label
               className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
-                reason === 'archive'
+                reason === 'passed_prep'
                   ? 'border-blue-400 bg-blue-50'
                   : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
               }`}
-              onClick={() => setReason('archive')}
+              onClick={() => setReason('passed_prep')}
             >
               <div className={`mt-0.5 shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                reason === 'archive' ? 'border-blue-500' : 'border-slate-300'
+                reason === 'passed_prep' ? 'border-blue-500' : 'border-slate-300'
               }`}>
-                {reason === 'archive' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                {reason === 'passed_prep' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-800">準備不足・関係者不足で見送り</p>
-                <p className="text-xs text-slate-500 mt-0.5">過去案件に登録する（来年の参考に）</p>
+                <p className="text-xs text-slate-500 mt-0.5">自社応募履歴に記録する（来年の参考に）</p>
               </div>
             </label>
           </div>
@@ -465,7 +465,7 @@ export default function NewCasesTab({ cases, lastResearched, onRefresh }: Props)
   }
 
   // ── 「見送り」確定処理 ────────────────────────────────────────
-  const handleDismiss = async (id: string, status: 'dismissed' | 'archive') => {
+  const handleDismiss = async (id: string, status: 'passed_unrelated' | 'passed_prep') => {
     setModalSubmitting(true)
     addProcessing(id)
     try {

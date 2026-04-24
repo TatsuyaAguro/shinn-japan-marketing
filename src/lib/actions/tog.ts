@@ -35,6 +35,7 @@ function rowToCase(r: Record<string, unknown>): TogCase {
     linkedClientId:          (r.linked_client_id as string) ?? null,
     statusHistory:           (r.status_history as TogCase['statusHistory']) ?? [],
     uploadedFiles:           (r.uploaded_files as TogCase['uploadedFiles']) ?? [],
+    resultRecordedAt:        (r.result_recorded_at as string) ?? null,
     createdAt:               r.created_at as string,
     updatedAt:               r.updated_at as string,
   }
@@ -114,8 +115,9 @@ export async function upsertTogCase(input: Partial<TogCase> & { id?: string }): 
   if (input.memo !== undefined)        row.memo = input.memo
   if (input.assignedTo !== undefined)  row.assigned_to = input.assignedTo
   if (input.linkedClientId !== undefined) row.linked_client_id = input.linkedClientId
-  if (input.statusHistory !== undefined)  row.status_history = input.statusHistory
-  if (input.uploadedFiles !== undefined)  row.uploaded_files = input.uploadedFiles
+  if (input.statusHistory !== undefined)    row.status_history = input.statusHistory
+  if (input.uploadedFiles !== undefined)    row.uploaded_files = input.uploadedFiles
+  if (input.resultRecordedAt !== undefined) row.result_recorded_at = input.resultRecordedAt
 
   const { data } = await supabase
     .from('tog_cases')
@@ -144,10 +146,11 @@ export async function updateTogCaseStatus(
   const history = ((current?.status_history as TogCase['statusHistory']) ?? [])
   history.push({ status, date: new Date().toISOString().slice(0, 10), note })
 
-  await supabase
-    .from('tog_cases')
-    .update({ status, status_history: history })
-    .eq('id', id)
+  const isResultStatus = ['accepted', 'rejected', 'passed_unrelated', 'passed_prep', 'passed'].includes(status)
+  const update: Record<string, unknown> = { status, status_history: history }
+  if (isResultStatus) update.result_recorded_at = new Date().toISOString()
+
+  await supabase.from('tog_cases').update(update).eq('id', id)
 }
 
 export async function patchTogCase(
