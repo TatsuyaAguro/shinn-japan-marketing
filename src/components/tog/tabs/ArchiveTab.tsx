@@ -8,13 +8,14 @@ import { bulkInsertTogCases } from '@/lib/actions/tog'
 
 // ─── Props ────────────────────────────────────────────────────
 interface Props {
-  archiveCases: TogCase[]   // status='archive' → 業界データベース
-  historyCases: TogCase[]   // accepted/rejected/passed_* → 自社応募履歴
+  archiveCases: TogCase[]   // status='archive' → 過去データベース
+  historyCases: TogCase[]   // accepted/rejected/passed_* → 案件（応募履歴）
   onRefresh: () => void
 }
 
-type SubTab = 'db' | 'history'
+type SubTab = 'history' | 'db'
 type DbSortKey = 'name' | 'organization' | 'prefecture' | 'budget' | 'deadline' | 'winner'
+type HistorySortKey = 'recorded_desc' | 'recorded_asc' | 'pref_asc' | 'pref_desc' | 'result' | 'year_desc' | 'year_asc'
 
 const MEMBERS = ['MARI', 'KS', 'TMD', 'AG', 'JETH', 'SND']
 
@@ -65,18 +66,11 @@ function parseCSV(text: string): string[][] {
 
 // ─── MultiSelectDropdown ──────────────────────────────────────
 function MultiSelectDropdown({
-  label,
-  options,
-  selected,
-  onChange,
+  label, options, selected, onChange,
 }: {
-  label: string
-  options: string[]
-  selected: string[]
-  onChange: (v: string[]) => void
+  label: string; options: string[]; selected: string[]; onChange: (v: string[]) => void
 }) {
   const [open, setOpen] = useState(false)
-
   return (
     <div className="relative">
       <button
@@ -100,18 +94,14 @@ function MultiSelectDropdown({
               <button
                 onClick={() => { onChange([]); setOpen(false) }}
                 className="w-full text-left text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5 mb-1 border-b border-slate-100"
-              >
-                クリア
-              </button>
+              >クリア</button>
             )}
             {options.map(opt => (
               <label key={opt} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 cursor-pointer rounded-lg">
                 <input
                   type="checkbox"
                   checked={selected.includes(opt)}
-                  onChange={e =>
-                    onChange(e.target.checked ? [...selected, opt] : selected.filter(s => s !== opt))
-                  }
+                  onChange={e => onChange(e.target.checked ? [...selected, opt] : selected.filter(s => s !== opt))}
                   className="accent-indigo-600"
                 />
                 <span className="text-xs text-slate-700">{opt}</span>
@@ -127,27 +117,257 @@ function MultiSelectDropdown({
 // ─── ResultBadge ──────────────────────────────────────────────
 function ResultBadge({ status }: { status: string }) {
   if (status === 'accepted') {
-    return (
-      <span className="inline-flex items-center px-2.5 py-1 bg-emerald-500 text-white text-xs font-bold rounded-full whitespace-nowrap">
-        採択
-      </span>
-    )
+    return <span className="inline-flex items-center px-2.5 py-1 bg-emerald-500 text-white text-xs font-bold rounded-full whitespace-nowrap">採択</span>
   }
   if (status === 'rejected') {
-    return (
-      <span className="inline-flex items-center px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-full whitespace-nowrap">
-        不採択
-      </span>
-    )
+    return <span className="inline-flex items-center px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-full whitespace-nowrap">不採択</span>
   }
+  return <span className="inline-flex items-center px-2.5 py-1 bg-slate-400 text-white text-xs font-bold rounded-full whitespace-nowrap">見送り</span>
+}
+
+// ─── Sub-A: 案件（応募履歴） ──────────────────────────────────
+function HistorySubTab({ cases }: { cases: TogCase[] }) {
+  const router = useRouter()
+
+  const [search, setSearch] = useState('')
+  const [prefFilter, setPrefFilter] = useState<string[]>([])
+  const [resultFilter, setResultFilter] = useState<string[]>([])
+  const [yearFilter, setYearFilter] = useState('')
+  const [memberFilter, setMemberFilter] = useState('')
+  const [sortKey, setSortKey] = useState<HistorySortKey>('recorded_desc')
+
+  // ─── 統計（フィルタ前・全件）────────────────────────────────
+  const acceptedAll = cases.filter(c => c.status === 'accepted')
+  const rejectedAll = cases.filter(c => c.status === 'rejected')
+  const passedAll   = cases.filter(c => isPassedStatus(c.status))
+  const appliedTotal = acceptedAll.length + rejectedAll.length
+  const acceptanceRate = appliedTotal > 0 ? Math.round(acceptedAll.length / appliedTotal * 100) : 0
+  const totalBudget = acceptedAll.reduce((s, c) => s + (c.budget ?? 0), 0)
+
+  const prefCountMap: Record<string, number> = {}
+  acceptedAll.forEach(c => { if (c.prefecture) prefCountMap[c.prefecture] = (prefCountMap[c.prefecture] ?? 0) + 1 })
+  const top3 = Object.entries(prefCountMap).sort((a, b) => b[1] - a[1]).slice(0, 3)
+
+  // ─── フィルタ選択肢 ───────────────────────────────────────────
+  const prefOptions = [...new Set(cases.map(c => c.prefecture).filter(Boolean))].sort()
+  const yearOptions = [...new Set(cases.map(c => getCalendarYear(c, true)).filter(Boolean))].sort().reverse()
+
+  const RESULT_OPTIONS = [
+    { value: 'accepted', label: '採択' },
+    { value: 'rejected', label: '不採択' },
+    { value: 'passed',   label: '見送り' },
+  ]
+
+  const toggleResult = (v: string) =>
+    setResultFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
+
+  const resultBucket = (c: TogCase) =>
+    c.status === 'accepted' ? 'accepted' : c.status === 'rejected' ? 'rejected' : 'passed'
+
+  const resultOrder: Record<string, number> = { accepted: 0, rejected: 1, passed: 2 }
+
+  // ─── フィルタ + ソート ─────────────────────────────────────────
+  const filtered = [...cases]
+    .filter(c => {
+      if (search) {
+        const q = search.toLowerCase()
+        if (!c.name.toLowerCase().includes(q) && !c.organization.toLowerCase().includes(q)) return false
+      }
+      if (prefFilter.length > 0 && !prefFilter.includes(c.prefecture)) return false
+      if (resultFilter.length > 0 && !resultFilter.includes(resultBucket(c))) return false
+      if (yearFilter && getCalendarYear(c, true) !== yearFilter) return false
+      if (memberFilter && c.assignedTo !== memberFilter) return false
+      return true
+    })
+    .sort((a, b) => {
+      const aDate = a.resultRecordedAt ?? a.createdAt ?? ''
+      const bDate = b.resultRecordedAt ?? b.createdAt ?? ''
+      switch (sortKey) {
+        case 'recorded_asc': return aDate.localeCompare(bDate)
+        case 'pref_asc':     return (a.prefecture ?? '').localeCompare(b.prefecture ?? '')
+        case 'pref_desc':    return (b.prefecture ?? '').localeCompare(a.prefecture ?? '')
+        case 'result':       return (resultOrder[resultBucket(a)] ?? 3) - (resultOrder[resultBucket(b)] ?? 3)
+        case 'year_desc':    return getCalendarYear(b, true).localeCompare(getCalendarYear(a, true))
+        case 'year_asc':     return getCalendarYear(a, true).localeCompare(getCalendarYear(b, true))
+        default:             return bDate.localeCompare(aDate) // recorded_desc
+      }
+    })
+
   return (
-    <span className="inline-flex items-center px-2.5 py-1 bg-slate-400 text-white text-xs font-bold rounded-full whitespace-nowrap">
-      見送り
-    </span>
+    <div className="space-y-5">
+      {/* ── サマリーカード ──────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs text-slate-400 mb-1">採択率</p>
+          <p className="text-3xl font-bold text-emerald-600">
+            {acceptanceRate}<span className="text-base font-semibold text-slate-500">%</span>
+          </p>
+          <p className="text-xs text-slate-400 mt-1">{acceptedAll.length}採択 / {appliedTotal}応募</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs text-slate-400 mb-1">総獲得金額</p>
+          <p className="text-2xl font-bold text-indigo-600">{totalBudget > 0 ? formatBudget(totalBudget) : '─'}</p>
+          <p className="text-xs text-slate-400 mt-1">採択案件の上限額合計</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs text-slate-400 mb-2">採択数TOP都道府県</p>
+          {top3.length > 0 ? (
+            <ol className="space-y-1">
+              {top3.map(([pref, cnt], idx) => (
+                <li key={pref} className="flex items-center gap-2 text-xs">
+                  <span className={`w-4 h-4 flex items-center justify-center rounded-full text-white font-bold text-[10px] shrink-0 ${idx === 0 ? 'bg-amber-400' : idx === 1 ? 'bg-slate-400' : 'bg-orange-400'}`}>{idx + 1}</span>
+                  <span className="text-slate-700 font-medium truncate">{pref}</span>
+                  <span className="text-slate-400 shrink-0">{cnt}件</span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-xs text-slate-400">─</p>
+          )}
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <p className="text-xs text-slate-400 mb-2">結果内訳</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center px-2 py-0.5 bg-emerald-500 text-white text-xs font-bold rounded-full">採択</span>
+              <span className="text-sm font-bold text-slate-800">{acceptedAll.length}件</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">不採択</span>
+              <span className="text-sm font-bold text-slate-800">{rejectedAll.length}件</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center px-2 py-0.5 bg-slate-400 text-white text-xs font-bold rounded-full">見送り</span>
+              <span className="text-sm font-bold text-slate-800">{passedAll.length}件</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── フィルタ + ソートバー ───────────────────────────────── */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="案件名・公示元で検索"
+          className="flex-1 min-w-48 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        />
+        <MultiSelectDropdown label="都道府県" options={prefOptions} selected={prefFilter} onChange={setPrefFilter} />
+        <div className="flex items-center gap-1">
+          {RESULT_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => toggleResult(opt.value)}
+              className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                resultFilter.includes(opt.value)
+                  ? opt.value === 'accepted' ? 'bg-emerald-500 text-white border-emerald-500'
+                    : opt.value === 'rejected' ? 'bg-red-500 text-white border-red-500'
+                    : 'bg-slate-500 text-white border-slate-500'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >{opt.label}</button>
+          ))}
+        </div>
+        <select
+          value={yearFilter}
+          onChange={e => setYearFilter(e.target.value)}
+          className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        >
+          <option value="">全年度</option>
+          {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
+        </select>
+        <select
+          value={memberFilter}
+          onChange={e => setMemberFilter(e.target.value)}
+          className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        >
+          <option value="">全担当者</option>
+          {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <select
+          value={sortKey}
+          onChange={e => setSortKey(e.target.value as HistorySortKey)}
+          className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        >
+          <option value="recorded_desc">記録日（新→古）</option>
+          <option value="recorded_asc">記録日（古→新）</option>
+          <option value="pref_asc">都道府県（昇順）</option>
+          <option value="pref_desc">都道府県（降順）</option>
+          <option value="result">結果順</option>
+          <option value="year_desc">年度（新→古）</option>
+          <option value="year_asc">年度（古→新）</option>
+        </select>
+        <span className="text-xs text-slate-400 ml-auto">{filtered.length}件</span>
+      </div>
+
+      {/* ── カードグリッド ──────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
+          <p className="text-sm text-slate-400">
+            {cases.length === 0
+              ? '応募履歴がありません。案件を採択・不採択・見送りにすると自動で記録されます。'
+              : '絞り込み条件に一致する案件がありません。'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtered.map(c => {
+            const hasPeriod = c.recruitmentDate && c.deadline
+            const period = hasPeriod
+              ? `${c.recruitmentDate} 〜 ${c.deadline}`
+              : (c.deadline ?? '─')
+            const periodLabel = hasPeriod ? '公募期間' : '締切日'
+
+            return (
+              <div
+                key={c.id}
+                onClick={() => router.push(`/tog/${c.id}`)}
+                className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all group cursor-pointer"
+              >
+                {/* カードヘッダー */}
+                <div className="p-5 border-b border-slate-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-11 h-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                        <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-slate-800 text-sm leading-snug group-hover:text-blue-700 transition-colors line-clamp-2">
+                          {c.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-0.5">{c.prefecture || '─'}</p>
+                      </div>
+                    </div>
+                    <div className="shrink-0 mt-0.5">
+                      <ResultBadge status={c.status} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* カードボディ */}
+                <div className="p-5 space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-slate-400 w-14 shrink-0 pt-px">地域</span>
+                    <span className="text-xs font-medium text-slate-700">{c.prefecture || '─'}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-slate-400 w-14 shrink-0 pt-px">{periodLabel}</span>
+                    <span className="text-xs font-medium text-slate-700">{period}</span>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
-// ─── Sub-A: 業界データベース ──────────────────────────────────
+// ─── Sub-B: 過去データベース ──────────────────────────────────
 function DatabaseSubTab({
   cases,
   onRefresh,
@@ -496,255 +716,14 @@ function DatabaseSubTab({
   )
 }
 
-// ─── Sub-B: 自社応募履歴 ─────────────────────────────────────
-function HistorySubTab({ cases }: { cases: TogCase[] }) {
-  const router = useRouter()
-
-  const [search, setSearch] = useState('')
-  const [prefFilter, setPrefFilter] = useState<string[]>([])
-  const [resultFilter, setResultFilter] = useState<string[]>([])   // 'accepted','rejected','passed'
-  const [yearFilter, setYearFilter] = useState('')
-  const [memberFilter, setMemberFilter] = useState('')
-
-  // ─── 統計 ────────────────────────────────────────────────────
-  const acceptedAll = cases.filter(c => c.status === 'accepted')
-  const rejectedAll = cases.filter(c => c.status === 'rejected')
-  const passedAll   = cases.filter(c => isPassedStatus(c.status))
-  const appliedTotal = acceptedAll.length + rejectedAll.length
-  const acceptanceRate = appliedTotal > 0 ? Math.round(acceptedAll.length / appliedTotal * 100) : 0
-  const totalBudget = acceptedAll.reduce((s, c) => s + (c.budget ?? 0), 0)
-
-  const prefCountMap: Record<string, number> = {}
-  acceptedAll.forEach(c => { if (c.prefecture) prefCountMap[c.prefecture] = (prefCountMap[c.prefecture] ?? 0) + 1 })
-  const top3 = Object.entries(prefCountMap).sort((a, b) => b[1] - a[1]).slice(0, 3)
-
-  // ─── フィルタ選択肢 ───────────────────────────────────────────
-  const prefOptions = [...new Set(cases.map(c => c.prefecture).filter(Boolean))].sort()
-  const yearOptions = [...new Set(cases.map(c => getCalendarYear(c, true)).filter(Boolean))].sort().reverse()
-
-  const RESULT_OPTIONS = [
-    { value: 'accepted', label: '採択' },
-    { value: 'rejected', label: '不採択' },
-    { value: 'passed',   label: '見送り' },
-  ]
-
-  const toggleResult = (v: string) =>
-    setResultFilter(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
-
-  // ─── フィルタ適用 ─────────────────────────────────────────────
-  const filtered = [...cases]
-    .filter(c => {
-      if (search) {
-        const q = search.toLowerCase()
-        if (!c.name.toLowerCase().includes(q) && !c.organization.toLowerCase().includes(q)) return false
-      }
-      if (prefFilter.length > 0 && !prefFilter.includes(c.prefecture)) return false
-      if (resultFilter.length > 0) {
-        const bucket = c.status === 'accepted' ? 'accepted' : c.status === 'rejected' ? 'rejected' : 'passed'
-        if (!resultFilter.includes(bucket)) return false
-      }
-      if (yearFilter && getCalendarYear(c, true) !== yearFilter) return false
-      if (memberFilter && c.assignedTo !== memberFilter) return false
-      return true
-    })
-    .sort((a, b) => {
-      const aDate = a.resultRecordedAt ?? a.createdAt ?? ''
-      const bDate = b.resultRecordedAt ?? b.createdAt ?? ''
-      return bDate.localeCompare(aDate)
-    })
-
-  return (
-    <div className="space-y-5">
-      {/* サマリーカード */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4">
-          <p className="text-xs text-slate-400 mb-1">採択率</p>
-          <p className="text-3xl font-bold text-emerald-600">{acceptanceRate}<span className="text-base font-semibold text-slate-500">%</span></p>
-          <p className="text-xs text-slate-400 mt-1">{acceptedAll.length}採択 / {appliedTotal}応募</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4">
-          <p className="text-xs text-slate-400 mb-1">総獲得金額</p>
-          <p className="text-2xl font-bold text-indigo-600">{totalBudget > 0 ? formatBudget(totalBudget) : '─'}</p>
-          <p className="text-xs text-slate-400 mt-1">採択案件の上限額合計</p>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4">
-          <p className="text-xs text-slate-400 mb-2">採択数TOP都道府県</p>
-          {top3.length > 0 ? (
-            <ol className="space-y-1">
-              {top3.map(([pref, cnt], idx) => (
-                <li key={pref} className="flex items-center gap-2 text-xs">
-                  <span className={`w-4 h-4 flex items-center justify-center rounded-full text-white font-bold text-[10px] ${idx === 0 ? 'bg-amber-400' : idx === 1 ? 'bg-slate-400' : 'bg-orange-400'}`}>{idx + 1}</span>
-                  <span className="text-slate-700 font-medium">{pref}</span>
-                  <span className="text-slate-400">{cnt}件</span>
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="text-xs text-slate-400">─</p>
-          )}
-        </div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-4">
-          <p className="text-xs text-slate-400 mb-2">結果内訳</p>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center px-2 py-0.5 bg-emerald-500 text-white text-xs font-bold rounded-full">採択</span>
-              <span className="text-sm font-bold text-slate-800">{acceptedAll.length}件</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">不採択</span>
-              <span className="text-sm font-bold text-slate-800">{rejectedAll.length}件</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center px-2 py-0.5 bg-slate-400 text-white text-xs font-bold rounded-full">見送り</span>
-              <span className="text-sm font-bold text-slate-800">{passedAll.length}件</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* フィルタバー */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="案件名・公示元で検索"
-          className="flex-1 min-w-48 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        />
-        <MultiSelectDropdown label="都道府県" options={prefOptions} selected={prefFilter} onChange={setPrefFilter} />
-
-        {/* 結果フィルタ（ボタントグル） */}
-        <div className="flex items-center gap-1">
-          {RESULT_OPTIONS.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => toggleResult(opt.value)}
-              className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors ${
-                resultFilter.includes(opt.value)
-                  ? opt.value === 'accepted' ? 'bg-emerald-500 text-white border-emerald-500'
-                    : opt.value === 'rejected' ? 'bg-red-500 text-white border-red-500'
-                    : 'bg-slate-500 text-white border-slate-500'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        <select
-          value={yearFilter}
-          onChange={e => setYearFilter(e.target.value)}
-          className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        >
-          <option value="">全年度</option>
-          {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
-        </select>
-        <select
-          value={memberFilter}
-          onChange={e => setMemberFilter(e.target.value)}
-          className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        >
-          <option value="">全担当者</option>
-          {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <span className="text-xs text-slate-400 ml-auto">{filtered.length}件</span>
-      </div>
-
-      {/* テーブル */}
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
-          <p className="text-sm text-slate-400">
-            {cases.length === 0
-              ? '自社応募履歴がありません。案件を応募・採択・不採択・見送りにすると記録されます。'
-              : '絞り込み条件に一致する案件がありません。'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-20">結果</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500">案件名</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-28 hidden md:table-cell">公示元</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-20 hidden lg:table-cell">都道府県</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-24 hidden lg:table-cell">金額</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-24 hidden md:table-cell">記録日</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 w-16 hidden lg:table-cell">担当者</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.map((c, i) => (
-                <tr
-                  key={c.id}
-                  className={`hover:bg-slate-50/80 transition-colors cursor-pointer ${i % 2 === 1 ? 'bg-slate-50/30' : ''}`}
-                  onClick={() => router.push(`/tog/${c.id}`)}
-                >
-                  <td className="px-4 py-3">
-                    <ResultBadge status={c.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-slate-800 line-clamp-1 hover:text-indigo-600">{c.name}</p>
-                    {c.memo && (
-                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{c.memo}</p>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 text-xs hidden md:table-cell">
-                    <span className="line-clamp-1">{c.organization || '─'}</span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">{c.prefecture || '─'}</td>
-                  <td className="px-4 py-3 text-xs font-medium hidden lg:table-cell">
-                    <span className={c.budget ? 'text-slate-700' : 'text-slate-400'}>
-                      {formatBudget(c.budget)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500 hidden md:table-cell">
-                    {c.resultRecordedAt
-                      ? new Date(c.resultRecordedAt).toLocaleDateString('ja-JP')
-                      : c.updatedAt
-                        ? new Date(c.updatedAt).toLocaleDateString('ja-JP')
-                        : '─'}
-                  </td>
-                  <td className="px-4 py-3 text-xs hidden lg:table-cell">
-                    {c.assignedTo
-                      ? <span className="font-semibold text-blue-600">{c.assignedTo}</span>
-                      : <span className="text-slate-400">─</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main: ArchiveTab with SubTabs ───────────────────────────
 export default function ArchiveTab({ archiveCases, historyCases, onRefresh }: Props) {
-  const [subTab, setSubTab] = useState<SubTab>('db')
+  const [subTab, setSubTab] = useState<SubTab>('history')
 
   return (
     <div className="space-y-4">
       {/* サブタブナビゲーション */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-        <button
-          onClick={() => setSubTab('db')}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-            subTab === 'db'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
-          </svg>
-          業界データベース
-          <span className="text-xs px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-full font-semibold">
-            {archiveCases.length}
-          </span>
-        </button>
         <button
           onClick={() => setSubTab('history')}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
@@ -756,19 +735,35 @@ export default function ArchiveTab({ archiveCases, historyCases, onRefresh }: Pr
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-          自社応募履歴
+          案件
           <span className="text-xs px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-full font-semibold">
             {historyCases.length}
+          </span>
+        </button>
+        <button
+          onClick={() => setSubTab('db')}
+          className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+            subTab === 'db'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+          </svg>
+          過去データベース
+          <span className="text-xs px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-full font-semibold">
+            {archiveCases.length}
           </span>
         </button>
       </div>
 
       {/* サブタブコンテンツ */}
-      {subTab === 'db' && (
-        <DatabaseSubTab cases={archiveCases} onRefresh={onRefresh} />
-      )}
       {subTab === 'history' && (
         <HistorySubTab cases={historyCases} />
+      )}
+      {subTab === 'db' && (
+        <DatabaseSubTab cases={archiveCases} onRefresh={onRefresh} />
       )}
     </div>
   )
